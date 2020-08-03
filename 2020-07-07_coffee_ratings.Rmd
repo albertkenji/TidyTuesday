@@ -1,0 +1,299 @@
+---
+title: "Coffee-Ratings"
+date: 2020-08-03
+output: html_output
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytuesdayR)
+
+```
+
+# Load the weekly Data
+
+```{r Load}
+
+tt <- tt_load("2020-07-07")
+```
+
+
+# Readme
+
+```{r Readme, eval = interactive()}
+
+tt
+
+```
+
+# Glimpse Data
+
+Take an initial look at the format of the data available.
+
+```{r Glimpse}
+
+tt %>% 
+  map(glimpse)
+
+```
+
+# Wrangle
+
+```{r Wrangle}
+
+theme_set(theme_minimal())
+
+coffee <- tt
+
+coffee_ratings <- coffee$coffee_ratings
+View(coffee_ratings)
+
+# Count
+
+coffee_ratings %>% 
+  count(species, sort = TRUE)
+
+coffee_ratings %>% 
+  count(species, variety, sort = TRUE)
+
+coffee_lumped <- coffee_ratings %>% 
+  filter(!is.na(variety), 
+         total_cup_points > 12) %>% 
+  mutate(variety = fct_lump(variety, 12), sort = TRUE)
+
+coffee_lumped %>% 
+  mutate(variety = fct_reorder(variety, total_cup_points)) %>% 
+  ggplot(aes(x = total_cup_points, y = variety)) +
+  geom_boxplot()
+
+coffee_lumped %>% 
+  ggplot(aes(x = total_cup_points, fill = variety)) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ variety, scale = "free_y") +
+  theme(legend.position = "none")
+
+coffee_ratings %>% 
+  mutate(coffee_id = row_number()) %>% 
+  select(coffee_id, total_cup_points, species, variety, owner, 
+         farm_name, country_of_origin, aroma:moisture)
+
+```
+
+
+```{r count}
+
+coffee_ratings %>% 
+  summarise(across(everything(), ~mean(!is.na(.)))) %>% 
+  gather() %>% 
+  View()
+
+coffee_ratings %>% 
+  count(producer, sort = TRUE)
+
+coffee_ratings %>% 
+  count(company, sort = TRUE)
+
+coffee_ratings %>% 
+  count(color, sort = TRUE)
+
+coffee_ratings %>% 
+  count(country = fct_lump(country_of_origin, 12), sort = TRUE) %>% 
+  filter(!is.na(country)) %>% 
+  mutate(country = fct_reorder(country, n)) %>% 
+  ggplot(aes(n, country)) +
+  geom_col()
+
+coffee_ratings %>% 
+  mutate(country = fct_lump(country_of_origin, 12),
+         country = fct_reorder(country, total_cup_points)) %>% 
+  filter(total_cup_points > 0, !is.na(country_of_origin)) %>% 
+  ggplot(aes(x = total_cup_points, y = country)) +
+  geom_boxplot()
+
+# Japan Curiosity: Kozu Matsuzawa
+coffee_ratings %>% 
+  filter(country_of_origin == "Japan") %>% 
+  select(owner, total_cup_points)
+```
+
+```{r metrics}
+
+coffee_metrics <- 
+  coffee_ratings %>% 
+  filter(total_cup_points > 0) %>% 
+  mutate(coffee_id = row_number()) %>% 
+  select(coffee_id, total_cup_points, variety, company,
+         country_of_origin, 
+         altitude_mean_meters,
+         aroma:moisture) %>% 
+  pivot_longer(aroma:cupper_points, 
+               names_to = "metric", values_to = "value") %>% 
+  group_by(coffee_id, total_cup_points) 
+
+coffee_metrics %>% 
+  ggplot(aes(value)) + 
+  geom_histogram() +
+  facet_wrap(~metric)
+
+coffee_metrics %>% 
+  mutate(metric = fct_reorder(metric, value)) %>% 
+  ggplot(aes(value, metric)) +
+  ggridges::geom_density_ridges()
+
+coffee_metrics %>% 
+  group_by(metric) %>% 
+  summarise(average = mean(value),
+            sd = sd(value)) %>% 
+  arrange(desc(average))
+
+```
+
+```{r correlations}
+
+library(ggraph)
+library(igraph)
+library(tidytext)
+
+correlations <- 
+  coffee_metrics %>% 
+  widyr::pairwise_cor(metric, coffee_id, value, sort = TRUE)
+
+correlations %>% 
+  head(60) %>% 
+  graph_from_data_frame() %>% 
+  ggraph() +
+  geom_edge_link(aes(edge_alpha = correlation)) + 
+  geom_node_point() +
+  geom_node_text(aes(label = name), repel = TRUE)
+
+```
+
+```{r altitude}
+
+coffee_ratings %>% 
+  filter(altitude_mean_meters >= 2000) %>% 
+  select(altitude_mean_meters, altitude)
+
+
+coffee_ratings %>% 
+  filter(altitude_mean_meters < 10000) %>% 
+  mutate(altitude_mean_meters = pmin(altitude_mean_meters, 3000)) %>% 
+  ggplot(aes(altitude_mean_meters, total_cup_points)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+coffee_metrics %>% 
+  filter(altitude_mean_meters < 10000) %>% 
+  mutate(altitude_mean_meters = pmin(altitude_mean_meters, 3000)) %>% 
+  group_by(metric) %>% 
+  summarise(correlation = cor(altitude_mean_meters, value)) %>% 
+  arrange(desc(correlation)) %>% 
+  mutate(tided = map(model, broom:tidy)) %>% 
+  unnest(tided)
+
+```
+
+```{r plots}
+
+# Variety
+
+coffee_lumped %>% 
+  mutate(variety = fct_reorder(variety, total_cup_points)) %>% 
+  ggplot(aes(x = total_cup_points, y = variety)) +
+  geom_boxplot()
+
+coffee_lumped %>% 
+  mutate(variety = fct_reorder(variety, total_cup_points)) %>% 
+  ggplot(aes(x = total_cup_points, y = variety)) +
+  geom_violin()
+
+coffee_lumped %>% 
+  ggplot(aes(x = total_cup_points, fill = variety)) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ variety, scale = "free_y") +
+  theme(legend.position = "none")
+
+
+# Country
+
+coffee_ratings %>% 
+  mutate(country = fct_lump(country_of_origin, 12),
+         country = fct_reorder(country, total_cup_points)) %>% 
+  filter(total_cup_points > 0, !is.na(country_of_origin)) %>% 
+  ggplot(aes(x = total_cup_points, y = country)) +
+  geom_boxplot()
+
+coffee_ratings %>% 
+  count(country = fct_lump(country_of_origin, 12), sort = TRUE) %>% 
+  filter(!is.na(country)) %>% 
+  mutate(country = fct_reorder(country, n)) %>% 
+  ggplot(aes(n, country)) +
+  geom_col()
+
+# Metrics  
+
+coffee_metrics %>% 
+  ggplot(aes(value)) + 
+  geom_histogram() +
+  facet_wrap(~metric)
+
+coffee_metrics %>% 
+  mutate(metric = fct_reorder(metric, value)) %>% 
+  ggplot(aes(value, metric)) +
+  ggridges::geom_density_ridges()
+
+```
+
+```{r publish}
+
+coffee_ratings %>% 
+  mutate(country = fct_lump(country_of_origin, 12),
+         country = fct_reorder(country, total_cup_points)) %>% 
+  filter(total_cup_points > 0, !is.na(country_of_origin)) %>% 
+  ggplot(aes(x = total_cup_points, y = country)) +
+  ggridges::geom_density_ridges(fill = "#B99976", color = "#3E1404") +
+  scale_fill_gradient(low = "#6F4E37", high = "#6F4E37") +
+  labs(title = "Coffee Quality by Country of Origin",
+       caption = "Source: Coffee Quality Database | Graphic: Kenji") +
+  ylab(NULL) +
+  xlab("Total Cup Points") +
+  theme_minimal(base_size = 18, base_family = "DIN Condensed Bold") +
+  theme(plot.background = element_rect(fill= "#6F4E37", 
+                                       color = "#6F4E37"),
+        panel.background = element_rect(fill= "#6F4E37",
+                                        color = "#6F4E37"),
+        axis.text.x = element_text (color = "#B99976", 
+                                    size = 14,
+                                    face = "bold"),
+        axis.text.y = element_text (color = "#B99976", 
+                                    size = 14,
+                                    face = "bold"),
+        plot.title = element_text(hjust = 0.5, 
+                                  vjust = 0.5, 
+                                  size = 18, 
+                                  face = "bold", 
+                                  margin = margin (0,0,20,0), 
+                                  color = "#B99976"),
+        axis.title.x.bottom = element_text(color = "#B99976",
+                                           size = 14,
+                                           face = "bold"),
+        legend.position = "none",
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "#6F4E37"),
+        plot.caption = element_text(colour = "#B99976", 
+                                    size = 10, 
+                                    margin = margin(20, 0, 0, 0),
+                                    face = "bold"),
+        ) +
+  ggsave("coffee-ratings.png", dpi = 320, width = 12, height = 7)
+
+
+```
+
