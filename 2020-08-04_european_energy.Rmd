@@ -1,0 +1,204 @@
+---
+title: "European Energy"
+author: "Albert Kenji"
+date: "04/08/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+## European Energy
+
+Source: Eurostat Energy  
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytuesdayR)
+
+```
+
+## Load the weekly Data/Readme
+
+```{r load}
+
+tt <- tt_load("2020-08-04")
+tt
+```
+
+## Datasets
+
+```{r dataets}
+
+tt %>% 
+  map(glimpse)
+
+energy_types <- 
+  tt %>% 
+  purrr::pluck(1)
+
+country_total <- 
+  tt %>% 
+  purrr::pluck(2)
+
+```
+
+## EDA
+
+```{r energy-type}
+
+energy_types %>% 
+  group_by(type)
+
+energy_types %>% 
+  count(type, level, sort = TRUE)
+
+energy_types %>% 
+  count(level, sort = TRUE)
+
+energy_types %>% 
+  skimr::skim()
+
+energy_types %>% 
+  filter(is.na(country_name))
+
+# Tidy Energy_type
+
+energy_type_tidy <- 
+  energy_types %>% 
+  mutate(country = as_factor(country),
+         type = as_factor(type),
+         level = as_factor(level)) %>% 
+  mutate(country_name = case_when(is.na(country_name) ~ "United Kingdom", TRUE ~ country_name)) %>% 
+  pivot_longer(5:7, names_to = "year", values_to = "production")
+
+
+```
+
+```{r country_total}
+
+head(country_total)
+
+country_total %>% 
+  skimr::skim()
+
+
+# Tidy Country Total
+
+country_total_tidy <- 
+  country_total %>% 
+  mutate(country = as_factor(country),
+         type = as_factor(type),
+         level = as_factor(level)) %>% 
+  pivot_longer(5:7, names_to = "year", values_to = "energy")
+
+```
+
+
+## Graphs
+
+```{r graphs}
+
+## Produção geral por GWh - EU
+
+energy_types %>% 
+  mutate(country = as_factor(country)) %>% 
+  pivot_longer(5:7, names_to = "year", values_to = "production") %>% 
+  group_by(type, year) %>% 
+  ggplot(aes(production, year, fill = type)) +
+  geom_col() +
+  theme_minimal()
+
+## Produção geral por GWh - Por País
+
+energy_types %>% 
+  mutate(country = as_factor(country)) %>% 
+  pivot_longer(5:7, names_to = "year", values_to = "production") %>% 
+  group_by(type, year, country) %>% 
+  ggplot(aes(production, year, fill = type)) +
+  geom_col() +
+  facet_wrap(~country, scale = "free_x") +
+  theme_minimal()
+
+## 
+
+country_total %>% 
+  mutate(country = as_factor(country),
+         type = as_factor(type),
+         level = as_factor(level)) %>% 
+  pivot_longer(5:7, names_to = "year", values_to = "energy") %>% 
+  group_by(type, year) %>% 
+  ggplot(aes(energy, year, fill = type)) +
+  geom_col() +
+  facet_wrap(~country, scale = "free_x") +
+  theme_minimal()
+
+```
+
+```{r exemple}
+
+energy_type_tidy %>%
+  filter(year == 2018, country == "NO") %>% 
+  group_by(type, year, country) %>% 
+  ggplot(aes(production, year, fill = type)) +
+  geom_col() +
+  coord_flip() +
+  facet_grid(~country) +
+  theme_minimal()
+
+
+
+pallete <- c("#990000","#d7301f","#ef6548","#fc8d59", "#fdbb84", "#fdd49e", "#fee8c8", "#fff7ec")
+
+energy_types %>% 
+  mutate(country = as_factor(country),
+         type = as_factor(type),
+         level = as_factor(level)) %>% 
+  mutate(country_name = case_when(is.na(country_name) ~ "United Kingdom", TRUE ~ country_name)) %>% 
+  pivot_longer(5:7, names_to = "year", values_to = "production") %>% 
+  filter(year == 2018) %>% 
+  group_by(country_name) %>% 
+  mutate(total = sum(production)) %>%
+  mutate(percent = production/total) %>%
+  ggplot(aes(percent, year, fill = type)) +
+  geom_col(color = "#e5c494", width = 0.75) +
+  facet_wrap(~country_name, nrow = 9, ncol = 5, dir = "v") +
+  labs(title = "How European Countries Generated Electricity in 2018",
+       x = NULL,
+       y = NULL,
+       color = "Type",
+       caption = "Source: Eurostat Energy | Graphic: Kenji") +
+  theme_minimal(base_family = "Gill Sans MT", base_size = 14) +
+  scale_fill_manual(values = pallete) +
+  theme(
+    plot.background = element_rect(fill= "#e5c494", 
+                                   color = "#e5c494"),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_blank(),
+    plot.title = element_text(hjust = 0.5, 
+                              vjust = 0.5, 
+                              size = 18, 
+                              face = "bold", 
+                              margin = margin (0,0,20,0),
+                              color = "grey20"),
+    plot.caption = element_text(size = 10, 
+                                margin = margin(20, 0, 0, 0),
+                                color = "grey20"),
+    legend.text = element_text(size = 12,
+                               color = "grey20"),
+    legend.title = element_blank(),
+    legend.position = c(0.90, 0.70),
+    strip.text.x = element_text(size = 10,
+                                face = "bold",
+                                color = "grey20")
+  ) +
+  ggsave("european_energy.png", dpi = 320, width = 12, height = 7)
+
+
+  
+```
+
